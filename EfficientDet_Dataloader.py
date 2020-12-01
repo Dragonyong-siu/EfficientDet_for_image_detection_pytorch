@@ -16,8 +16,8 @@ dataset = EfficientDet_Dataset(data = data_frame,
                                image_path = images_path, 
                                image_size = 512, 
                                anchor_bbox = anchors, 
-                               positive_threshold = torch.Tensor([0.2]).to(device), 
-                               negative_threshold = torch.Tensor([0.1]).to(device))
+                               positive_threshold = torch.Tensor([0.4]).to(device), 
+                               negative_threshold = torch.Tensor([0.3]).to(device))
 
 train_dataloader = DataLoader(dataset,
                               batch_size = 1, 
