@@ -43,8 +43,7 @@ class bbox_networks(nn.Module):
                      ('cls_out', nn.Conv2d(self.feature_size, 
                                            self.num_classes * self.num_anchors, 
                                            kernel_size = 3,
-                                           padding = 1)),
-                     ('sigmoid', nn.Sigmoid())]))
+                                           padding = 1)),]))
     
     #7.2.1) fcn_layer1 : 4 * convolution to get same feature_size
     #7.2.2) fcn_layer2 : 1 * convolution to get num_anchors * num_bbox_points
@@ -82,7 +81,7 @@ class bbox_networks(nn.Module):
     cls_logit = cls_logit.reshape(feature.shape[0], 
                                   -1, 
                                   self.num_anchors * self.num_classes)
-   
+    
     #7.2) regression_network
     reg_logit = self.reg_layer(feature)
     reg_logit = reg_logit.permute(0, 2, 3, 1)
