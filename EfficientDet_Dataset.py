@@ -78,7 +78,7 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
     image_array = np.array(resized_image)
     image_copy = image_array.copy()
     image_tensor = torch.Tensor(image_copy)
-    image_tensor = image_tensor.reshape(-1, 3, self.image_size, self.image_size)
+    image_tensor = image_tensor.contiguous().view(-1, 3, self.image_size, self.image_size)
     image_tensor = image_tensor.to(device)
 
     #4.2) feature_map : p3, p4, p5, p6, p7
