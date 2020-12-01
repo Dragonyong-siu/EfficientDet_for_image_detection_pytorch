@@ -16,21 +16,22 @@ class cls_loss(nn.modules.loss._WeightedLoss):
     super(cls_loss, self).__init__()
     self.alpha = alpha
     self.gamma = gamma
-    self.weight = torch.Tensor([0, 0.05, 0.19, 0.19, 0.19, 0.19, 0.19]).to(device)
+    self.weight = torch.Tensor([100, 100, 100, 100, 100, 0.5, 1])
 
   def forward(self, input, target):
     
     #8.1.1.1) weight : rescaling_weight given to each class
     weight = Variable(self.weight)
+    weight = weight.to(device)
 
     #8.1.1.2) cross_entropy_loss : logp_t, p_t
-    ce_loss_function = nn.CrossEntropyLoss(weight = weight)
+    ce_loss_function = nn.CrossEntropyLoss(weight = weight, reduction = 'none')
     logp_t = - ce_loss_function(input, target)
     p_t =  torch.exp(logp_t)
     
     #8.1.1.3) focal_loss : - alpha * (1 - p_t)**(gamma) * (logp_t)
     focal_loss = - (self.alpha) * ((1 - p_t) ** (self.gamma)) * logp_t
-
+    focal_loss = torch.mean(focal_loss)
     return focal_loss
 
 #8.2) Efficient_Reg_loss
@@ -43,5 +44,5 @@ class reg_loss():
 
     return loss
 
-EfficientDet_Cls_loss = cls_loss(alpha = 0.25, gamma = 5)
+EfficientDet_Cls_loss = cls_loss(alpha = 1, gamma = 2)
 EfficientDet_Reg_loss = reg_loss()
