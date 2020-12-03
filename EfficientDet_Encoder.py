@@ -14,8 +14,6 @@
   #2.3.4) conv_to_p6
   #2.3.5) conv_to_p7
 
-device = 'cuda'
-
 import torch.nn as nn
 from efficientnet_pytorch import EfficientNet
 
@@ -24,39 +22,48 @@ class efficientnet(nn.Module):
     super(efficientnet, self).__init__()
 
     #2.1) using efficientnet_b0 
-    self.efficientnet_b0 = EfficientNet.from_pretrained('efficientnet-b0')
+    self.efficientnet_b = EfficientNet.from_pretrained('efficientnet-b3')
 
     #2.2) stages to make c series(1 ~ 5)
-    self.stage1 = nn.Sequential(self.efficientnet_b0._conv_stem,
-                                self.efficientnet_b0._bn0)
+    self.stage1 = nn.Sequential(self.efficientnet_b._conv_stem,
+                                self.efficientnet_b._bn0,
+                                self.efficientnet_b._blocks[0],
+                                self.efficientnet_b._blocks[1])
     
-    self.stage2 = nn.Sequential(self.efficientnet_b0._blocks[0],
-                                self.efficientnet_b0._blocks[1],
-                                self.efficientnet_b0._blocks[2])
+    self.stage2 = nn.Sequential(self.efficientnet_b._blocks[2],
+                                self.efficientnet_b._blocks[3],
+                                self.efficientnet_b._blocks[4])
     
-    self.stage3 = nn.Sequential(self.efficientnet_b0._blocks[3],
-                                self.efficientnet_b0._blocks[4])
+    self.stage3 = nn.Sequential(self.efficientnet_b._blocks[5],
+                                self.efficientnet_b._blocks[6],
+                                self.efficientnet_b._blocks[7])
     
-    self.stage4 = nn.Sequential(self.efficientnet_b0._blocks[5],
-                                self.efficientnet_b0._blocks[6],
-                                self.efficientnet_b0._blocks[7])
+    self.stage4 = nn.Sequential(self.efficientnet_b._blocks[8],
+                                self.efficientnet_b._blocks[9],
+                                self.efficientnet_b._blocks[10],
+                                self.efficientnet_b._blocks[11],
+                                self.efficientnet_b._blocks[12],
+                                self.efficientnet_b._blocks[13],
+                                self.efficientnet_b._blocks[14],
+                                self.efficientnet_b._blocks[15],
+                                self.efficientnet_b._blocks[16],
+                                self.efficientnet_b._blocks[17])
     
-    self.stage5 = nn.Sequential(self.efficientnet_b0._blocks[8],
-                                self.efficientnet_b0._blocks[9],
-                                self.efficientnet_b0._blocks[10],
-                                self.efficientnet_b0._blocks[11],
-                                self.efficientnet_b0._blocks[12],
-                                self.efficientnet_b0._blocks[13],
-                                self.efficientnet_b0._blocks[14],
-                                self.efficientnet_b0._blocks[15])
+    self.stage5 = nn.Sequential(self.efficientnet_b._blocks[18],
+                                self.efficientnet_b._blocks[19],
+                                self.efficientnet_b._blocks[20],
+                                self.efficientnet_b._blocks[21],
+                                self.efficientnet_b._blocks[22],
+                                self.efficientnet_b._blocks[23],
+                                self.efficientnet_b._blocks[24])
     
 
     #2.3) make p series(3 ~ 7) using convolution
-    self.feature_size = 256
-    self.c3_size = 40
-    self.c4_size = 80
-    self.c5_size = 320
-    self.p6_size = 256
+    self.feature_size = 160
+    self.c3_size = 48
+    self.c4_size = 136
+    self.c5_size = 384
+    self.p6_size = 160
 
     self.p3_kernel_size = 1
     self.p3_stride = 1
@@ -97,7 +104,7 @@ class efficientnet(nn.Module):
     self.p7_kernel_size = 3
     self.p7_stride = 2
     self.p7_padding = 1
-    self.c_out = 256
+    self.c_out = 160
     self.momentum = 0.9997
     self.epsilon = 4e-5
     self.conv_to_p7 = nn.Conv2d(in_channels = self.p6_size, 
