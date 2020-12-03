@@ -35,21 +35,21 @@
  #4.12) cls_label
  #4.13) reg_label
  #4.14) remove_element
+
+device = 'cuda'
   
 import PIL
 import torchvision
 
 class EfficientDet_Dataset(torch.utils.data.Dataset):
   def __init__(self, 
-               data, 
-               encoder, 
+               data,  
                image_path, 
                image_size, 
                anchor_bbox,
                positive_threshold,
                negative_threshold):
     self.data = data
-    self.encoder = encoder
     self.image_path = image_path
     self.image_size = image_size
     self.anchor_bbox = anchor_bbox
@@ -78,26 +78,17 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
     image_array = np.array(resized_image)
     image_copy = image_array.copy()
     image_tensor = torch.Tensor(image_copy)
-    image_tensor = image_tensor.contiguous().view(-1, 3, self.image_size, self.image_size)
-    image_tensor = image_tensor.to(device)
-
-    #4.2) feature_map : p3, p4, p5, p6, p7
-    feature_map = self.encoder(image_tensor)
-    p3 = feature_map[0].squeeze(0)
-    p4 = feature_map[1].squeeze(0)
-    p5 = feature_map[2].squeeze(0)
-    p6 = feature_map[3].squeeze(0)
-    p7 = feature_map[4].squeeze(0)
-    p_set = [p3, p4, p5, p6, p7]
+    image_tensor = image_tensor.view(3, self.image_size, self.image_size)
 
     #4.3) helmet_label : helmet, helmet_blurred, helmet_partial, helmet_difficult, helmet_sideline
     helmet_label = self.data['label'][index]
     
-    indices_set = [] 
+    positive_indices_list = []
+    ignored_indices_list = []
     cd_box_set = []
     cls_label_set = []
     reg_label_set = []
-    for k in range(len(p_set)):
+    for k in range(5):
 
       #4.4.1) left
       left = self.data['left'][index]
@@ -135,7 +126,6 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
       gt_base = torch.zeros([self.anchor_bbox[k].shape[0], 4])
       for i in range(gt_box.shape[0]):
         gt_base[:, :] = gt_box[i]
-        gt_base = gt_base.to(device)
         iou_matrix = self.compute_ious(self.anchor_bbox[k], gt_base)
         iou_matrix = iou_matrix.unsqueeze(1)
         iou_matrices.append(iou_matrix)
@@ -144,6 +134,49 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
       #4.7) total_indices : positive_indices + negative_indices + ignored_indices
       total_indices = torch.arange(self.anchor_bbox[k].shape[0])
       total_indices = total_indices.tolist()
+
+      #4.9) negative_case
+      negative_indices_set = [] 
+      negative_boxes = []
+      negative_cls_labels = []
+      negative_reg_labels = []
+      negative_matrix = torch.less(iou_matrices, self.negative_threshold)
+      negative_matrix = negative_matrix.float()
+      
+      #4.9.1) negative_column : all cd_boxes' ious over one gt_box
+      negative_column = negative_matrix.sum(1)
+      negative_column = negative_column.tolist()
+
+      #4.9.2) negative_indices
+      negative_indices = list(filter(lambda index: negative_column[index] == iou_matrices.shape[1], 
+                                     range(len(negative_column))))
+      negative_indices_set = negative_indices 
+
+      #4.9.3) total_indices : remove positive_ones
+      total_indices = np.delete(total_indices, negative_indices)
+
+      negative_indices = torch.Tensor(negative_indices) 
+      negative_indices = negative_indices.long()
+
+      #4.9.4) negative_box
+      negative_box = torch.index_select(input = self.anchor_bbox[k], 
+                                        dim = 0, 
+                                        index = negative_indices)
+      
+      #4.9.5) negative_cls_label
+      label = self.helmet_encoding('background')
+      negative_cls_label = torch.zeros([negative_box.shape[0]])
+      negative_cls_label[:] = label
+      negative_cls_label = negative_cls_label.tolist()
+
+      #4.9.6) negative_reg_label
+      negative_reg_label = torch.zeros([negative_box.shape[0], 4])
+      negative_reg_label = negative_reg_label.tolist()
+        
+      negative_box = negative_box.tolist()
+      negative_boxes += (negative_box)
+      negative_cls_labels += (negative_cls_label)
+      negative_reg_labels += (negative_reg_label)
    
       #4.8) positive_case
       positive_indices_set = [] 
@@ -168,11 +201,12 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
         else: positive_indices_set += (positive_indices) 
 
         #4.8.3) total_indices : remove positive_ones
+        if not isinstance(total_indices, list):
+          total_indices = total_indices.tolist()
         total_indices = self.remove_element(total_indices, positive_indices)
 
         positive_indices = torch.Tensor(positive_indices)
         positive_indices = positive_indices.long()
-        positive_indices = positive_indices.to(device)
         
         #4.8.4) positive_box
         positive_box = torch.index_select(input = self.anchor_bbox[k], 
@@ -188,7 +222,6 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
         #4.8.6) positive_reg_label
         gt_base = torch.zeros([positive_box.shape[0], 4])
         gt_base[:, :] = gt_box[j]
-        gt_base = gt_base.to(device)
         positive_reg_label = self.targets_transform(positive_box, gt_base)
         positive_reg_label = positive_reg_label.tolist()
 
@@ -196,55 +229,8 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
         positive_boxes += (positive_box)
         positive_cls_labels += (positive_cls_label)
         positive_reg_labels += (positive_reg_label)
-
-
-      #4.9) negative_case
-      negative_indices_set = [] 
-      negative_boxes = []
-      negative_cls_labels = []
-      negative_reg_labels = []
-      negative_matrix = torch.less(iou_matrices, self.negative_threshold)
-      negative_matrix = negative_matrix.float()
       
-      #4.9.1) negative_column : all cd_boxes' ious over one gt_box
-      negative_column = negative_matrix.sum(1)
-      negative_column = negative_column.tolist()
-        
-      #4.9.2) negative_indices
-      negative_indices = list(filter(lambda index: negative_column[index] == iou_matrices.shape[1], 
-                                     range(len(negative_column))))
-      negative_indices_set = negative_indices 
-
-      #4.9.3) total_indices : remove positive_ones
-      total_indices = self.remove_element(total_indices, negative_indices)
-
-      negative_indices = torch.Tensor(negative_indices) 
-      negative_indices = negative_indices.long()
-      negative_indices = negative_indices.to(device)
-        
-      #4.9.4) negative_box
-      negative_box = torch.index_select(input = self.anchor_bbox[k], 
-                                        dim = 0, 
-                                        index = negative_indices)
-        
-      #4.9.5) negative_cls_label
-      label = self.helmet_encoding('background')
-      negative_cls_label = torch.zeros([negative_box.shape[0]])
-      negative_cls_label[:] = label
-      negative_cls_label = negative_cls_label.tolist()
-        
-      #4.9.6) negative_reg_label
-      gt_base = torch.zeros([negative_box.shape[0], 4])
-      gt_base[:, :] = gt_box[j]
-      gt_base = gt_base.to(device)
-      negative_reg_label = self.targets_transform(negative_box, gt_base)
-      negative_reg_label = negative_reg_label.tolist()
-        
-      negative_box = negative_box.tolist()
-      negative_boxes += (negative_box)
-      negative_cls_labels += (negative_cls_label)
-      negative_reg_labels += (negative_reg_label)
- 
+      positive_indices_list.append(positive_indices_set)
 
       #4.10) ignored_case
       ignored_indices_set = [] 
@@ -254,10 +240,10 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
       
       #4.10.1) ignored_indices = total_indices - (positive_indices + negative_indices)
       ignored_indices = total_indices
-      ignored_indices_set = ignored_indices 
+      ignored_indices_set = sorted(ignored_indices, reverse = True)
+      ignored_indices_list.append(ignored_indices_set)
       ignored_indices = torch.Tensor(ignored_indices)
       ignored_indices = ignored_indices.long()
-      ignored_indices = ignored_indices.to(device)
       
       #4.10.2) ignored_box
       ignored_box = torch.index_select(input = self.anchor_bbox[k], 
@@ -271,53 +257,79 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
       ignored_cls_label = ignored_cls_label.tolist()
       
       #4.10.4) ignored_reg_label
-      gt_base = torch.zeros([ignored_box.shape[0], 4])
-      gt_base[:, :] = gt_box[j]
-      gt_base = gt_base.to(device)
-      ignored_reg_label = self.targets_transform(ignored_box, gt_base)
+      ignored_reg_label = torch.zeros([ignored_box.shape[0], 4])
       ignored_reg_label = ignored_reg_label.tolist()
 
       ignored_box = ignored_box.tolist()
       ignored_boxes += (ignored_box)
       ignored_cls_labels += (ignored_cls_label)
       ignored_reg_labels += (ignored_reg_label)
-
-      #4.11) cd_box
-      cd_box = positive_boxes + negative_boxes + ignored_boxes
       
       #4.12) cls_label
-      cls_label = positive_cls_labels + negative_cls_labels + ignored_cls_labels
+      cls_label = negative_cls_labels + positive_cls_labels + ignored_cls_labels
       
       #4.13) reg_label
-      reg_label = positive_reg_labels + negative_reg_labels + ignored_reg_labels
+      reg_label = negative_reg_labels + positive_reg_labels + ignored_reg_labels
 
       #4.14) indices
-      indices = positive_indices_set + negative_indices_set + ignored_indices_set
-      
-      sorted_tuple = sorted(list(zip(indices, list(zip(list(zip(cd_box, cls_label)), reg_label)))))
-      sorted_tuple = list(zip(*sorted_tuple))[1]
-      reg_label = list(zip(*sorted_tuple))[1]
-      sorted_tuple = list(zip(*sorted_tuple))[0]
-      cd_box = list(zip(*sorted_tuple))[0]
-      cls_label = list(zip(*sorted_tuple))[1]
+      indices = negative_indices_set + positive_indices_set + ignored_indices_set
 
-      cd_box = torch.Tensor(cd_box)
-      cd_box = cd_box.to(device)
-      cd_box_set.append(cd_box)
+      sorted_tuple = sorted(list(zip(indices, list(zip(cls_label, reg_label)))))
+      sorted_tuple = list(zip(*sorted_tuple))[1]
+      cls_label, reg_label = list(zip(*sorted_tuple))
       
       cls_label = torch.Tensor(cls_label)
-      cls_label = cls_label.to(device)
       cls_label_set.append(cls_label)
       
       reg_label = torch.Tensor(reg_label)
-      reg_label = reg_label.to(device)
       reg_label_set.append(reg_label)
 
+    max_shape = cls_label_set[0].shape[0]
+    ignored_indices3 = ignored_indices_list[0]
+    ignored_indices4 = ignored_indices_list[1]
+    ignored_indices5 = ignored_indices_list[2]
+    ignored_indices6 = ignored_indices_list[3]
+    ignored_indices7 = ignored_indices_list[4]
+
+    ignored_indices3 = self.append_until_max(ignored_indices3, max_shape)
+    ignored_indices4 = self.append_until_max(ignored_indices4, max_shape)
+    ignored_indices5 = self.append_until_max(ignored_indices5, max_shape)
+    ignored_indices6 = self.append_until_max(ignored_indices6, max_shape)
+    ignored_indices7 = self.append_until_max(ignored_indices7, max_shape)
+
+    positive_indices3 = positive_indices_list[0]
+    positive_indices4 = positive_indices_list[1]
+    positive_indices5 = positive_indices_list[2]
+    positive_indices6 = positive_indices_list[3]
+    positive_indices7 = positive_indices_list[4]
+
+    positive_indices3 = self.append_until_max(positive_indices3, max_shape)
+    positive_indices4 = self.append_until_max(positive_indices4, max_shape)
+    positive_indices5 = self.append_until_max(positive_indices5, max_shape)    
+    positive_indices6 = self.append_until_max(positive_indices6, max_shape)
+    positive_indices7 = self.append_until_max(positive_indices7, max_shape)                                                                                                  
+    
     dictionary = {}
-    dictionary['p_set'] = p_set
-    # dictionary['cd_box_set'] = cd_box_set
-    dictionary['cls_label_set'] = cls_label_set
-    dictionary['reg_label_set'] = reg_label_set
+    ## dictionary['cd_box_set'] = cd_box_set
+    dictionary['image_tensor'] = image_tensor
+
+    dictionary['cls_label3'] = cls_label_set[0]
+    dictionary['cls_label4'] = cls_label_set[1]
+    dictionary['cls_label5'] = cls_label_set[2]
+    dictionary['cls_label6'] = cls_label_set[3]
+    dictionary['cls_label7'] = cls_label_set[4]
+
+    dictionary['reg_label3'] = reg_label_set[0]
+    dictionary['reg_label4'] = reg_label_set[1]
+    dictionary['reg_label5'] = reg_label_set[2]
+    dictionary['reg_label6'] = reg_label_set[3]
+    dictionary['reg_label7'] = reg_label_set[4]
+
+    dictionary['positive_indices3'] = positive_indices3
+    dictionary['positive_indices4'] = positive_indices4
+    dictionary['positive_indices5'] = positive_indices5
+    dictionary['positive_indices6'] = positive_indices6
+    dictionary['positive_indices7'] = positive_indices7
 
     return dictionary
 
@@ -343,7 +355,6 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
     height = torch.sub(y_top, y_bottom)
 
     zero = torch.Tensor([0])
-    zero = zero.to(device)
 
     width = torch.max(width, zero)
     height = torch.max(height, zero)
@@ -367,37 +378,30 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
     if input == 'Helmet':
       encoded_label = torch.Tensor([0])
       encoded_label = encoded_label.long()
-      encoded_label = encoded_label.to(device)
 
     elif input == 'Helmet-Blurred':
-      encoded_label = torch.Tensor([1])
+      encoded_label = torch.Tensor([0])
       encoded_label = encoded_label.long()
-      encoded_label = encoded_label.to(device)
     
     elif input == 'Helmet-Difficult':
-      encoded_label = torch.Tensor([2])
+      encoded_label = torch.Tensor([0])
       encoded_label = encoded_label.long()
-      encoded_label = encoded_label.to(device)
     
     elif input == 'Helmet-Partial':
-      encoded_label = torch.Tensor([3])
+      encoded_label = torch.Tensor([0])
       encoded_label = encoded_label.long()
-      encoded_label = encoded_label.to(device)
     
     elif input == 'Helmet-Sideline':
-      encoded_label = torch.Tensor([4])
+      encoded_label = torch.Tensor([0])
       encoded_label = encoded_label.long()
-      encoded_label = encoded_label.to(device)
     
     elif input == 'background':
-      encoded_label = torch.Tensor([5])
+      encoded_label = torch.Tensor([1])
       encoded_label = encoded_label.long()
-      encoded_label = encoded_label.to(device)
 
     else: # input == 'ignored':
-      encoded_label = torch.Tensor([6])
+      encoded_label = torch.Tensor([0])
       encoded_label = encoded_label.long()
-      encoded_label = encoded_label.to(device)
       
     return encoded_label
 
@@ -429,3 +433,10 @@ class EfficientDet_Dataset(torch.utils.data.Dataset):
         total_list.remove(part_list[i])
 
     return total_list  
+
+  def append_until_max(self, input, max):
+
+    input = [len(input)] + input
+    input += [0] * (max - len(input) - 1)
+
+    return input
