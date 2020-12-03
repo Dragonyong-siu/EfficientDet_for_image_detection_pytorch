@@ -29,7 +29,7 @@ class doublewise_convolution(nn.Module):
     self.depthwise_stride = 1
     self.depthwise_padding = 0
     self.depthwise_dilation = 1
-    self.depthwise_groups = 256
+    self.depthwise_groups = 160
 
     self.pointwise_kernel = 1
     self.pointwise_stride = 1
@@ -80,7 +80,7 @@ class doublewise_convolution(nn.Module):
 class bifpn_layer(nn.Module):
   def __init__(self):
     super(bifpn_layer, self).__init__()
-    self.feature_size = 256
+    self.feature_size = 160
     self.epsilon = 1e-5
     
     #5.2.1) convolution to make intermediate_feature
@@ -139,7 +139,7 @@ class bifpn_layer(nn.Module):
 class bifpn(nn.Module):
   def __init__(self):
     super(bifpn, self).__init__()
-    self.num_layers = 3
+    self.num_layers = 6
     self.bifpn_layer = bifpn_layer()
     bifpn_layers = []
     for _ in range(self.num_layers):
