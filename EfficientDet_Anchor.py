@@ -66,7 +66,6 @@ class anchor():
       level_bboxes = np.concatenate(level_bboxes, axis = 1)
       level_bboxes = level_bboxes.reshape([-1, 4])
       level_bboxes = torch.Tensor(level_bboxes)
-      level_bboxes = level_bboxes.to(device)
       anchor_bboxes.append(level_bboxes)
     
     #3.9) anchor_bboxes  
